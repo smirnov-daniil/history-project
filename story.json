@@ -1,0 +1,17 @@
+{
+    "start": {
+      "text": "Вы прибываете в Петроград в апреле 1917 года. Что предпримете?",
+      "image": "images/intro.jpg",
+      "choices": [
+        {"text": "Вариант А", "next": "meet_leader"},
+        {"text": "Вариант B", "next": "other_path"}
+      ]
+    },
+    "meet_leader": {
+      "text": "Вы решаете встретиться с Лениным или Керенским?",
+      "choices": [
+        {"text": "Ленин", "next": "END"},
+        {"text": "Керенский", "next": "END"}
+      ]
+    }
+  }
