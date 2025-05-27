@@ -11,6 +11,8 @@ from aiogram.filters import CommandStart, Command
 from datetime import datetime
 import requests
 
+from endings import load_user_endings, save_user_ending, get_all_possible_endings
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -134,22 +136,10 @@ async def undo_last_choice(message: types.Message, state: FSMContext):
 @dp.message(Command("endings"))
 async def show_endings_progress(message: types.Message):
     user_id = message.from_user.id
-    endings_file = f'endings/{user_id}.json'
+    endings = load_user_endings(user_id)
+    all_ending_ids = get_all_possible_endings(story)
 
-    try:
-        if os.path.exists(endings_file):
-            with open(endings_file, 'r', encoding='utf-8') as f:
-                endings = json.load(f)
-        else:
-            endings = []
-    except Exception as e:
-        logging.error(f"Ошибка чтения концовок: {e}")
-        endings = []
-
-    all_ending_ids = [key for key, node in story.items()
-                      if isinstance(node, dict) and node.get('choices') is None or any(c.get('next') == 'END' for c in node.get('choices', []))]
-
-    total = len(set(all_ending_ids))
+    total = len(all_ending_ids)
     unlocked = len(set(endings))
 
     text = f"Вы открыли {unlocked} из {total} возможных концовок.\n"
@@ -191,21 +181,9 @@ async def send_summary(user_id: int, state: FSMContext):
         node_text = story.get(entry['node'], {}).get('text', '')
         summary += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
 
-    endings_file = f'endings/{user_id}.json'
     if history:
         last_node_id = history[-1]['node']
-        try:
-            if os.path.exists(endings_file):
-                with open(endings_file, 'r', encoding='utf-8') as f:
-                    saved_endings = json.load(f)
-            else:
-                saved_endings = []
-            if last_node_id not in saved_endings:
-                saved_endings.append(last_node_id)
-                with open(endings_file, 'w', encoding='utf-8') as f:
-                    json.dump(saved_endings, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logging.warning(f"Не удалось записать концовку: {e}")
+        save_user_ending(user_id, last_node_id)
 
     await bot.send_message(user_id, summary, reply_markup=types.ReplyKeyboardRemove())
     insights = await ai_insights(summary)
