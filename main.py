@@ -7,37 +7,29 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from datetime import datetime
-# Для работы с нейросетью
 import requests
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Environment variables
-API_TOKEN = os.getenv('TELEGRAM_TOKEN')  # ваш токен бота
-STORY_FILE = os.getenv('STORY_FILE', 'story.json')  # путь к JSON-сюжету
-HF_API_URL = os.getenv('HF_API_URL')  # URL модели на Hugging Face Inference API
-HF_API_TOKEN = os.getenv('HF_API_TOKEN')  # токен доступа к Hugging Face
+API_TOKEN = os.getenv('TELEGRAM_TOKEN')
+STORY_FILE = os.getenv('STORY_FILE', 'story.json')
+HF_API_URL = os.getenv('HF_API_URL')
+HF_API_TOKEN = os.getenv('HF_API_TOKEN')
 
-# Validate required env vars
 if not API_TOKEN:
     logging.error('Нет TELEGRAM_TOKEN в окружении')
     exit(1)
-# Проверяем нейросеть
 if not HF_API_URL or not HF_API_TOKEN:
     logging.warning('HF_API_URL или HF_API_TOKEN не заданы, функция ИИ будет недоступна')
 
-# Initialize bot and storage
 bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Load story definition from JSON file
 def load_story(path: str) -> dict:
     if not os.path.exists(path):
         logging.error(f'Файл сюжета не найден: {path}')
@@ -47,16 +39,13 @@ def load_story(path: str) -> dict:
 
 story = load_story(STORY_FILE)
 
-# FSM state for the entire quest
 class QuestStates(StatesGroup):
     IN_QUEST = State()
 
-# Build reply keyboard for a node
 def build_keyboard(node_id: str) -> types.ReplyKeyboardMarkup:
     buttons = [types.KeyboardButton(text=choice['text']) for choice in story.get(node_id, {}).get('choices', [])]
     return types.ReplyKeyboardMarkup(keyboard=[[b] for b in buttons], resize_keyboard=True)
 
-# Интеграция с Hugging Face Inference API для итогов и контрфактов
 async def ai_insights(summary_text: str) -> str:
     if not HF_API_URL or not HF_API_TOKEN:
         return 'ИИ-аналитика недоступна.'
@@ -77,7 +66,6 @@ async def ai_insights(summary_text: str) -> str:
         logging.error(f"Ошибка HF API: {response.status_code} {response.text}")
         return 'Не удалось получить ИИ-аналитику.'
 
-# Send a story node to user
 async def send_node(user_id: int, node_id: str, state: FSMContext):
     node = story.get(node_id)
     if not node:
@@ -92,12 +80,10 @@ async def send_node(user_id: int, node_id: str, state: FSMContext):
         )
         await cmd_start(mock_message, state)
         return
-    # Send image if specified
     img_path = node.get('image')
     if img_path and os.path.exists(img_path):
         await bot.send_photo(user_id, photo=open(img_path, 'rb'))
 
-    # Send text and keyboard
     reply_markup = build_keyboard(node_id) if node.get('choices') else types.ReplyKeyboardRemove()
     await bot.send_message(
         user_id,
@@ -106,14 +92,74 @@ async def send_node(user_id: int, node_id: str, state: FSMContext):
     )
     await state.set_state(QuestStates.IN_QUEST)
 
-# Handler for /start
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.update_data(history=[], current_node='start')
     await send_node(message.from_user.id, 'start', state)
 
-# Handler for any choice by text
+@dp.message(Command("choices"))
+async def show_current_progress(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    history = data.get("history", [])
+    if not history:
+        await message.answer("Вы пока не сделали ни одного выбора.")
+        return
+
+    text = "Ваши текущие выборы:\n"
+    for entry in history:
+        node_text = story.get(entry["node"], {}).get("text", "")
+        text += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
+    await message.answer(text)
+
+@dp.message(Command("undo"))
+async def undo_last_choice(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    history = data.get("history", [])
+    if not history:
+        await message.answer("Нет предыдущих шагов для отмены.")
+        return
+
+    history.pop()
+    await state.update_data(history=history)
+
+    if history:
+        previous_node = history[-1]['node']
+    else:
+        previous_node = 'start'
+
+    await state.update_data(current_node=previous_node)
+    await send_node(message.chat.id, previous_node, state)
+
+@dp.message(Command("endings"))
+async def show_endings_progress(message: types.Message):
+    user_id = message.from_user.id
+    endings_file = f'endings/{user_id}.json'
+
+    try:
+        if os.path.exists(endings_file):
+            with open(endings_file, 'r', encoding='utf-8') as f:
+                endings = json.load(f)
+        else:
+            endings = []
+    except Exception as e:
+        logging.error(f"Ошибка чтения концовок: {e}")
+        endings = []
+
+    all_ending_ids = [key for key, node in story.items()
+                      if isinstance(node, dict) and node.get('choices') is None or any(c.get('next') == 'END' for c in node.get('choices', []))]
+
+    total = len(set(all_ending_ids))
+    unlocked = len(set(endings))
+
+    text = f"Вы открыли {unlocked} из {total} возможных концовок.\n"
+    if endings:
+        text += "Открытые концовки:\n" + "\n".join(f"- {eid}" for eid in endings)
+    else:
+        text += "Вы пока не открыли ни одной."
+
+    await message.answer(text)
+
 @dp.message(QuestStates.IN_QUEST)
 async def process_choice(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -137,7 +183,6 @@ async def process_choice(message: types.Message, state: FSMContext):
         await state.update_data(current_node=next_id)
         await send_node(message.chat.id, next_id, state)
 
-# Summary at end
 async def send_summary(user_id: int, state: FSMContext):
     data = await state.get_data()
     history = data.get('history', [])
@@ -146,6 +191,22 @@ async def send_summary(user_id: int, state: FSMContext):
         node_text = story.get(entry['node'], {}).get('text', '')
         summary += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
 
+    endings_file = f'endings/{user_id}.json'
+    if history:
+        last_node_id = history[-1]['node']
+        try:
+            if os.path.exists(endings_file):
+                with open(endings_file, 'r', encoding='utf-8') as f:
+                    saved_endings = json.load(f)
+            else:
+                saved_endings = []
+            if last_node_id not in saved_endings:
+                saved_endings.append(last_node_id)
+                with open(endings_file, 'w', encoding='utf-8') as f:
+                    json.dump(saved_endings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.warning(f"Не удалось записать концовку: {e}")
+
     await bot.send_message(user_id, summary, reply_markup=types.ReplyKeyboardRemove())
     insights = await ai_insights(summary)
     await bot.send_message(user_id, insights, reply_markup=types.ReplyKeyboardMarkup(
@@ -153,7 +214,7 @@ async def send_summary(user_id: int, state: FSMContext):
     ))
     await state.clear()
 
-# Fallback for other messages
+
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
     if message.text.strip().lower() == "начать сначала":
@@ -161,7 +222,6 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Пожалуйста, используйте кнопки для выбора.")
 
-# Entry point
 async def main():
     try:
         await dp.start_polling(bot)
