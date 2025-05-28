@@ -144,7 +144,7 @@ async def show_endings_progress(message: types.Message):
 
     text = f"Вы открыли {unlocked} из {total} возможных концовок.\n"
     if endings:
-        text += "Открытые концовки:\n" + "\n".join(f"- {eid}" for eid in endings)
+        text += "Открытые концовки:\n" + "\n".join(f"- {story.get(eid, {}).get('title', eid)}" for eid in endings)
     else:
         text += "Вы пока не открыли ни одной."
 
