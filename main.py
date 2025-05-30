@@ -9,7 +9,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import CommandStart, Command
 from datetime import datetime
-import requests
 
 from endings import load_user_endings, save_user_ending, get_all_possible_endings
 
@@ -19,14 +18,10 @@ logging.basicConfig(level=logging.INFO)
 
 API_TOKEN = os.getenv('TELEGRAM_TOKEN')
 STORY_FILE = os.getenv('STORY_FILE', 'story.json')
-HF_API_URL = os.getenv('HF_API_URL')
-HF_API_TOKEN = os.getenv('HF_API_TOKEN')
 
 if not API_TOKEN:
     logging.error('Нет TELEGRAM_TOKEN в окружении')
     exit(1)
-if not HF_API_URL or not HF_API_TOKEN:
-    logging.warning('HF_API_URL или HF_API_TOKEN не заданы, функция ИИ будет недоступна')
 
 bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
@@ -47,26 +42,6 @@ class QuestStates(StatesGroup):
 def build_keyboard(node_id: str) -> types.ReplyKeyboardMarkup:
     buttons = [types.KeyboardButton(text=choice['text']) for choice in story.get(node_id, {}).get('choices', [])]
     return types.ReplyKeyboardMarkup(keyboard=[[b] for b in buttons], resize_keyboard=True)
-
-async def ai_insights(summary_text: str) -> str:
-    if not HF_API_URL or not HF_API_TOKEN:
-        return 'ИИ-аналитика недоступна.'
-    prompt = (
-        f"Подведи итоги следующей истории:\n{summary_text}\n"
-        "Затем спрогнозируй, что могло бы произойти иначе при другом развитии событий."
-    )
-    headers = {
-        'Authorization': f'Bearer {HF_API_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-    payload = {'inputs': prompt, 'options': {'wait_for_model': True}}
-    response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-    if response.status_code == 200:
-        data = response.json()
-        return data[0]['generated_text'] if isinstance(data, list) else data.get('generated_text', '')
-    else:
-        logging.error(f"Ошибка HF API: {response.status_code} {response.text}")
-        return 'Не удалось получить ИИ-аналитику.'
 
 async def send_node(user_id: int, node_id: str, state: FSMContext):
     node = story.get(node_id)
@@ -185,9 +160,7 @@ async def send_summary(user_id: int, state: FSMContext):
         last_node_id = history[-1]['node']
         save_user_ending(user_id, last_node_id)
 
-    await bot.send_message(user_id, summary, reply_markup=types.ReplyKeyboardRemove())
-    insights = await ai_insights(summary)
-    await bot.send_message(user_id, insights, reply_markup=types.ReplyKeyboardMarkup(
+    await bot.send_message(user_id, summary, reply_markup=types.ReplyKeyboardMarkup(
         keyboard=[[types.KeyboardButton(text="Начать сначала")]], resize_keyboard=True
     ))
     await state.clear()
