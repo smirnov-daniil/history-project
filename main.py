@@ -85,8 +85,9 @@ async def show_current_progress(message: types.Message, state: FSMContext):
 
     text = "Ваши текущие выборы:\n"
     for entry in history:
-        node_text = story.get(entry["node"], {}).get("text", "")
-        text += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
+        #node_text = story.get(entry["node"], {}).get("text", "")
+        #text += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
+        text += f"-> Вы выбрали: {entry['choice']}\n"
     await message.answer(text)
 
 @dp.message(Command("undo"))
@@ -153,8 +154,10 @@ async def send_summary(user_id: int, state: FSMContext):
     history = data.get('history', [])
     summary = 'Ваш итог путешествия по квесту:\n'
     for entry in history:
-        node_text = story.get(entry['node'], {}).get('text', '')
-        summary += f"- {node_text}\n  -> Вы выбрали: {entry['choice']}\n"
+        #node_text = story.get(entry['node'], {}).get('text', '')
+        #node_text = node_text[:max(len(node_text), 50)]
+        #summary += f"- {node_text}\n  -> Вы выбрали: {entry['choice'][:max(len(entry['choice']), 100)]}\n"
+        summary += f"-> Вы выбрали: {entry['choice'][:max(len(entry['choice']), 100)]}\n"
 
     if history:
         last_node_id = history[-1]['node']
