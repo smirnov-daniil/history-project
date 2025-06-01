@@ -98,13 +98,16 @@ async def undo_last_choice(message: types.Message, state: FSMContext):
         await message.answer("Нет предыдущих шагов для отмены.")
         return
 
+    # Удаляем последний выбор
     history.pop()
     await state.update_data(history=history)
 
+    # Определяем, где остановиться
     if history:
-        previous_node = history[-1]['node']
+        # Берём поле "next" из новой последней записи
+        previous_node = history[-1]["next"]
     else:
-        previous_node = 'start'
+        previous_node = "start"
 
     await state.update_data(current_node=previous_node)
     await send_node(message.chat.id, previous_node, state)
@@ -138,11 +141,15 @@ async def process_choice(message: types.Message, state: FSMContext):
         return
 
     choice = choices[selected]
+    next_id = choice.get('next')
     history = data.get('history', [])
-    history.append({'node': current_node, 'choice': choice['text']})
+    history.append({
+    "node": current_node,
+    "choice": choice["text"],
+    "next": next_id
+})
     await state.update_data(history=history)
 
-    next_id = choice.get('next')
     if next_id == 'END':
         await send_summary(message.chat.id, state)
     else:
