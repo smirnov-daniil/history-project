@@ -848,7 +848,7 @@
       "choices": [
           {
               "text": "Продолжить",
-              "next": "DzeHistory1"
+              "next": "DzeHistory2"
           }
       ]
   },
